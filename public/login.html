@@ -28,7 +28,7 @@ loginBtn.onclick = () => {
   .then(r => r.json())
   .then(d => {
     if(d.success) location.href="/launcher";
-    else loginStatus.innerText = "Invalid Login";
+    else loginStatus.innerText = d.message;
   });
 }
 </script>
