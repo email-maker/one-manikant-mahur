@@ -1,35 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Secure Login</title>
-<link rel="stylesheet" href="style.css">
+  <title>Secure Login</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="login-card">
+<div class="login-box">
   <h2>Secure Access</h2>
-  <input id="username" placeholder="Username">
-  <input id="password" type="password" placeholder="Password">
-  <button id="loginBtn">Login</button>
-  <p id="loginStatus"></p>
+  <input id="uid" placeholder="Username">
+  <input id="upass" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
 </div>
 
 <script>
-loginBtn.onclick = () => {
-  fetch("/login", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({
-      username: username.value.trim(),
-      password: password.value.trim()
-    })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if(d.success) location.href="/launcher";
-    else loginStatus.innerText = d.message;
-  });
+function login() {
+  if (uid.value === "Mani-Singh-alto" && upass.value === "Mani-Singh-alto") {
+    location.href = "/launcher.html";
+  } else {
+    alert("Invalid Login ❌");
+  }
 }
 </script>
 
