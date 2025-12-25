@@ -1,31 +1,45 @@
-logoutBtn.addEventListener("dblclick", () => {
-  fetch("/logout", { method:"POST" })
-    .then(() => location.href="/");
-});
+let sending = false;
 
-sendBtn.onclick = () => {
+const sendBtn = document.getElementById("sendBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const limitText = document.getElementById("limitText");
+
+sendBtn.addEventListener("click", () => { if (!sending) sendMail(); });
+logoutBtn.addEventListener("dblclick", () => { if (!sending) logout(); });
+
+async function sendMail() {
+  sending = true;
   sendBtn.disabled = true;
-  sendBtn.innerText = "Sending...";
+  sendBtn.innerText = "Sending…";
 
-  fetch("/send", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
+  const res = await fetch("/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       senderName: senderName.value,
-      email: email.value,
-      password: pass.value,
+      gmail: gmail.value,
+      apppass: apppass.value,
       subject: subject.value,
       message: message.value,
-      recipients: recipients.value
+      to: to.value
     })
-  })
-  .then(r => r.json())
-  .then(d => {
-    statusMessage.innerText = d.message;
-    alert(d.message);
-  })
-  .finally(() => {
-    sendBtn.disabled = false;
-    sendBtn.innerText = "Send All";
   });
-};
+
+  const data = await res.json();
+  sendBtn.disabled = false;
+  sendBtn.innerText = "Send All";
+  sending = false;
+
+  if (!data.success) {
+    limitText.innerText = `${data.count}/28`;
+    alert(data.msg);
+    return;
+  }
+
+  limitText.innerText = `${data.count}/28`;
+  alert(`Mail Send Successful ✅\nSent: ${data.sent}`);
+}
+
+function logout() {
+  location.href = "/login.html";
+}
