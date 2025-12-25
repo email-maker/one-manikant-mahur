@@ -1,148 +1,99 @@
-require("dotenv").config();
-const express = require("express");
-const session = require("express-session");
-const nodemailer = require("nodemailer");
-const path = require("path");
-const bodyParser = require("body-parser");
+import express from "express";
+import nodemailer from "nodemailer";
+import path from "path";
+import { fileURLToPath } from "url";
+
+/* BASIC SETUP */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-
-/* LOGIN (ID = PASSWORD) */
-const HARD_USER = "manikantmahur882";
-const HARD_PASS = "manikantmahur882";
-
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-app.use(
-  session({
-    secret: "safe-session",
-    resave: false,
-    saveUninitialized: true,
-    cookie: { maxAge: 3600000 }
-  })
-);
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "login.html"));
+});
 
-function auth(req, res, next) {
-  if (req.session.user) return next();
-  return res.redirect("/");
+/* CONFIG */
+const HOURLY_LIMIT = 28;
+const PARALLEL = 5;              // fast but safe
+const stats = {};                // gmail -> { count, start }
+
+/* RESET AFTER 1 HOUR */
+function resetIfNeeded(gmail) {
+  if (!stats[gmail]) {
+    stats[gmail] = { count: 0, start: Date.now() };
+    return;
+  }
+  if (Date.now() - stats[gmail].start >= 60 * 60 * 1000) {
+    stats[gmail] = { count: 0, start: Date.now() };
+  }
 }
 
-/* LOGIN */
-app.post("/login", (req, res) => {
-  const { username, password } = req.body;
-  if (username === HARD_USER && password === HARD_PASS) {
-    req.session.user = HARD_USER;
-    return res.json({ success: true });
+/* SAFE BULK SEND (NO STOP ON TEMP ERRORS) */
+async function sendBulk(transporter, mails) {
+  let sent = 0;
+  for (let i = 0; i < mails.length; i += PARALLEL) {
+    const chunk = mails.slice(i, i + PARALLEL);
+    const results = await Promise.allSettled(
+      chunk.map(m => transporter.sendMail(m))
+    );
+    results.forEach(r => { if (r.status === "fulfilled") sent++; });
   }
-  res.json({ success: false, message: "Invalid Login" });
-});
+  return sent;
+}
 
-/* LOGOUT */
-app.post("/logout", (req, res) => {
-  req.session.destroy(() => res.json({ success: true }));
-});
+/* SEND API */
+app.post("/send", async (req, res) => {
+  const { senderName, gmail, apppass, to, subject, message } = req.body;
 
-/* PAGES */
-app.get("/", (req, res) =>
-  res.sendFile(path.join(__dirname, "public/login.html"))
-);
-app.get("/launcher", auth, (req, res) =>
-  res.sendFile(path.join(__dirname, "public/launcher.html"))
-);
+  resetIfNeeded(gmail);
 
-/* UTILS */
-const wait = ms => new Promise(r => setTimeout(r, ms));
+  if (stats[gmail].count >= HOURLY_LIMIT) {
+    return res.json({ success: false, msg: "Mail Limit Full ❌", count: stats[gmail].count });
+  }
 
-/* TRANSPORTER — STABLE (NO POOL) */
-function createTransporter(email, password) {
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: email, pass: password },
-    tls: { rejectUnauthorized: false }
+  const recipients = to.split(/,|\r?\n/).map(r => r.trim()).filter(Boolean);
+  const remaining = HOURLY_LIMIT - stats[gmail].count;
+
+  if (recipients.length > remaining) {
+    return res.json({ success: false, msg: "Mail Limit Full ❌", count: stats[gmail].count });
+  }
+
+  const finalText =
+    message.trim() +
+    "\n\n📩 Scanned & Secured — www.avast.com";
+
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    pool: true,           // IMPORTANT: stable connection
+    maxConnections: 1,
+    maxMessages: 50,
+    auth: { user: gmail, pass: apppass }
   });
-}
 
-/* RETRY SEND (LEGIT) */
-async function sendWithRetry(transporter, mail, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      await transporter.sendMail(mail);
-      return true;
-    } catch (err) {
-      if (i === retries) return false;
-      await wait(300);
-    }
-  }
-}
-
-/* WORKER QUEUE (3 workers = low block risk) */
-async function runWorkers(list, workers, handler) {
-  const queues = Array.from({ length: workers }, () => []);
-  list.forEach((item, i) => queues[i % workers].push(item));
-
-  await Promise.all(
-    queues.map(async queue => {
-      for (const job of queue) {
-        await handler(job);
-        await wait(150);
-      }
-    })
-  );
-}
-
-/* SEND MAIL — TEMPLATE + 2 LINE GAP + FOOTER */
-app.post("/send", auth, async (req, res) => {
   try {
-    const { senderName, email, password, recipients, subject, message } = req.body;
-
-    const list = recipients
-      .split(/[\n,]+/)
-      .map(v => v.trim())
-      .filter(v => v.includes("@"));
-
-    const transporter = createTransporter(email, password);
-
-    /* EXACT TEMPLATE + 2 BLANK LINES + FOOTER */
-    const finalBody =
-`${message}
-
-    
-📩 Scanned & Secured — www.avast.com`;
-
-    const htmlBody = `
-<pre style="font-family:Arial, Segoe UI; font-size:15px; line-height:1.6; white-space:pre-wrap;">
-${finalBody}
-</pre>
-    `;
-
-    let sent = 0;
-
-    await runWorkers(list, 3, async (to) => {
-      const ok = await sendWithRetry(
-        transporter,
-        {
-          from: `${senderName || "User"} <${email}>`,
-          to,
-          subject: subject || "",
-          html: htmlBody
-        },
-        2
-      );
-      if (ok) sent++;
-    });
-
-    res.json({
-      success: true,
-      message: `Mail Sent ✔ (${sent}/${list.length})`
-    });
-
-  } catch (err) {
-    res.json({ success: false, message: err.message });
+    await transporter.verify();   // password check ONLY here
+  } catch {
+    return res.json({ success: false, msg: "Wrong App Password ❌", count: stats[gmail].count });
   }
+
+  const mails = recipients.map(r => ({
+    from: `"${senderName}" <${gmail}>`,
+    to: r,
+    subject,
+    text: finalText
+  }));
+
+  const sentCount = await sendBulk(transporter, mails);
+  stats[gmail].count += sentCount;
+
+  return res.json({ success: true, sent: sentCount, count: stats[gmail].count });
 });
 
-app.listen(PORT, () =>
-  console.log("Mail server running on port " + PORT)
-);
+/* START */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("✅ Safe Mail Server running on port", PORT));
