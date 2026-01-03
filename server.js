@@ -10,16 +10,16 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-/* ROOT */
+/* ROOT FIX */
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-/* CONFIG */
+/* CONFIG – SAFE */
 const HOURLY_LIMIT = 28;
-const PARALLEL = 3;           // spam-safe speed
-const DELAY_MS = 120;
-const stats = {};             // gmail -> { count, start }
+const PARALLEL = 3;               // lower = less spam risk
+const DELAY_MS = 120;             // real delay
+const stats = {};                 // gmail → { count, start }
 
 /* RESET AFTER 1 HOUR */
 function resetIfNeeded(gmail) {
@@ -32,9 +32,10 @@ function resetIfNeeded(gmail) {
   }
 }
 
-/* SAFE SEND */
+/* SAFE SEND WITH REAL DELAY */
 async function sendSafely(transporter, mails) {
   let sent = 0;
+
   for (let i = 0; i < mails.length; i += PARALLEL) {
     const chunk = mails.slice(i, i + PARALLEL);
 
@@ -42,9 +43,13 @@ async function sendSafely(transporter, mails) {
       chunk.map(m => transporter.sendMail(m))
     );
 
-    results.forEach(r => r.status === "fulfilled" && sent++);
+    results.forEach(r => {
+      if (r.status === "fulfilled") sent++;
+    });
+
     await new Promise(r => setTimeout(r, DELAY_MS));
   }
+
   return sent;
 }
 
@@ -76,6 +81,7 @@ app.post("/send", async (req, res) => {
     });
   }
 
+  /* FINAL TEXT (FOOTER FIXED) */
   const finalText =
     message.trim() +
     "\n\n📩 Scanned & Secured — www.avast.com";
@@ -107,17 +113,17 @@ app.post("/send", async (req, res) => {
     text: finalText
   }));
 
-  const sent = await sendSafely(transporter, mails);
-  stats[gmail].count += sent;
+  const sentCount = await sendSafely(transporter, mails);
+  stats[gmail].count += sentCount;
 
   return res.json({
     success: true,
-    sent,
+    sent: sentCount,
     count: stats[gmail].count
   });
 });
 
-/* START */
-app.listen(3000, () => {
-  console.log("✅ Safe Mail Server running on port 3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("✅ Safe Mail Server running on port", PORT);
 });
