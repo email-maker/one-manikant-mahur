@@ -1,16 +1,9 @@
-let sending = false;
-
 const sendBtn = document.getElementById("sendBtn");
-const logoutBtn = document.getElementById("logoutBtn");
-const limitText = document.getElementById("limitText");
+const countBox = document.getElementById("count");
 
-sendBtn.addEventListener("click", () => { if (!sending) sendMail(); });
-logoutBtn.addEventListener("dblclick", () => { if (!sending) logout(); });
-
-async function sendMail() {
-  sending = true;
+sendBtn.onclick = async () => {
   sendBtn.disabled = true;
-  sendBtn.innerText = "Sending…";
+  sendBtn.innerText = "Sending...";
 
   const res = await fetch("/send", {
     method: "POST",
@@ -28,18 +21,14 @@ async function sendMail() {
   const data = await res.json();
   sendBtn.disabled = false;
   sendBtn.innerText = "Send All";
-  sending = false;
 
-  if (!data.success) {
-    limitText.innerText = `${data.count}/28`;
-    alert(data.msg);
-    return;
-  }
+  countBox.innerText = `${data.count}/28`;
 
-  limitText.innerText = `${data.count}/28`;
-  alert(`Mail Send Successful ✅\nSent: ${data.sent}`);
-}
+  if (!data.success) alert(data.msg);
+  else alert(`Mail Send Successful ✅\nSent: ${data.sent}`);
+};
 
-function logout() {
-  location.href = "/login.html";
+function logout(){
+  localStorage.removeItem("auth");
+  location.href="/";
 }
