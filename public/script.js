@@ -1,9 +1,21 @@
-const sendBtn = document.getElementById("sendBtn");
-const countBox = document.getElementById("count");
+let sending = false;
 
-sendBtn.onclick = async () => {
+const sendBtn = document.getElementById("sendBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const limitText = document.getElementById("limitText");
+
+sendBtn.addEventListener("click", () => {
+  if (!sending) sendMail();
+});
+
+logoutBtn.addEventListener("dblclick", () => {
+  if (!sending) location.href = "/login.html";
+});
+
+async function sendMail() {
+  sending = true;
   sendBtn.disabled = true;
-  sendBtn.innerText = "Sending...";
+  sendBtn.innerText = "Sending…";
 
   const res = await fetch("/send", {
     method: "POST",
@@ -19,16 +31,13 @@ sendBtn.onclick = async () => {
   });
 
   const data = await res.json();
+
+  sending = false;
   sendBtn.disabled = false;
   sendBtn.innerText = "Send All";
 
-  countBox.innerText = `${data.count}/28`;
+  limitText.innerText = `${data.count}/28`;
 
-  if (!data.success) alert(data.msg);
-  else alert(`Mail Send Successful ✅\nSent: ${data.sent}`);
-};
-
-function logout(){
-  localStorage.removeItem("auth");
-  location.href="/";
+  if (!data.success) return alert(data.msg);
+  alert(`Mail Send Successful ✅\nSent: ${data.sent}`);
 }
